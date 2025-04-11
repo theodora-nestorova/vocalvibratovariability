@@ -1,0 +1,493 @@
+## Final runs - Started 10 Oct 2024
+## clear memory
+
+rm(list = ls())
+
+##
+## Set the working folder
+##
+
+## read in the data
+
+wd<-"C:/Teddy/Research/Oct 2024/2 AW/2 Analysis"
+setwd(wd)
+
+##
+##   Load all sorts of libraries
+##
+
+# Install
+
+install.packages("officer") 
+
+# Load
+
+library('officer') 
+library(ggplot2)
+library(drc)
+library(tidyverse)
+library(readxl)
+library(janitor) 
+library(broom)
+library(knitr)
+library(lme4)
+library(broom.mixed)
+library(nlme)
+library(kableExtra)
+
+
+##   ------------------   Inverse Logistic function - return x given y   -------------------------------------------------------------
+
+solveforx <- function(logit,y) {   
+             b <- logit[1]  
+             c <- logit[2]
+             d <- logit[3]
+             e <- logit[4]
+#            x <- e + (1/b)*log((d-c)/(y-c)-1)                                        ## For L.4  Need to be switched according to the function call in slogit()
+             x <- exp(log(e) + (1/b)*log((d-c)/(y-c)-1))                              ## For LL.4 Need to be switched according to the function call in slogit()
+             return(x)}
+
+##   ---------------------------------------------------------------------------------------------------------------------------------
+
+##   ------------------   Read and Format the Data from Praat / Voce Vista   -------------------------------------------------------------
+
+##
+## Read .txt file, no header and skip first row
+##
+
+ID2_1clean <- read.csv("ID2_1clean.csv")                                             ## Read txt file from Praat, first line skipped
+ID2_1hfex  <- read.csv("ID2_1hfex.csv")                                              ## Read txt file from Praat, first line skipped
+
+smryAll = data.frame(matrix(ncol = 0, nrow = 0))                                     ## Initialize dataframes for statistical summaries All
+smryPh1 = data.frame(matrix(ncol = 0, nrow = 0))                                     ## Initialize dataframes for statistical summaries Phase 1
+smryPh2 = data.frame(matrix(ncol = 0, nrow = 0))                                     ## Initialize dataframes for statistical summaries Phase 2
+
+id <- 2                                                                              ## Enter ID, Genre and Sample number
+genre <- "M"
+Sampl <- 1
+
+##   ------------------   Prepare Plots   -----------------------------------------------------------------------------------------------
+##
+##
+
+## A few color constants for the f0 contour plots
+
+F0LineColor <- "gray47"                                                              ## Color of the f0 line
+F0PointColor <- "orangered"                                                          ## Color of the f0 points
+HalfExtColor <- "steelblue3"                                                         ## Color of the HE points
+LogistColor <- "black"                                                               ## Color of the logistic curve
+PhaseColor <- "yellow"                                                               ## Color of the Transition phase points
+
+ColPh1 <- "steelblue2"                                                               ## Color of the Phase 1 points
+ColPh2 <- "royalblue3"                                                               ## Color of the Phase 2 points
+ColPh0 <- "yellow1"                                                                  ## Color of the Transition phase points
+
+# Values used to transform the data   !!! can be improved further by HZHL <- range(tbF0HE$HZ) etc...
+
+HZHigh  <- 575                                                                                          ## Define HZHigh
+HZLow   <- 400                                                                                          ## And HZLow such as 
+HZRange <- HZHigh - HZLow                                                                               ## HZ data are in the upper 1/3 end of HZRange
+
+HFEXHigh  <- 200                                                                                        ## Define HFEXHigh
+HFEXLow   <- 0                                                                                          ## And HFEXLow such as 
+HFEXRange <- HFEXHigh - HFEXLow                                                                         ## HFEX data are in the lower 1/3 end of HZRange
+
+coeff <- 0.4                                                                                            ## Scale between Y1 and Y2, approximately range(Y1)/range(Y2)
+
+##  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- 
+##
+##  Fitting data with splines and regressions - linear and 4 parameter S curve
+##
+##
+
+##   ------------------   Plot Praat points and splines and top/bottom data -------------------------------------------------------------
+
+spline.z <- as.data.frame(spline(ID2_1clean$Time, ID2_1clean$Hz))                                       ## Smooth F0 fom Praat contour in frame spline.z
+
+z <- ggplot(ID2_1hfex, aes(x = Time)) + xlab("Time [sec]") +
+           geom_point(aes(y = Hz), colour = "red", size = 5) +                                          ## These are the F0 data points
+           geom_point(data = ID2_1clean, aes(x = Time, y = Hz),
+                      colour = "black", shape = "+", size = 5)                                          ## These are the Praat data points
+           geom_line(data = spline.z, aes(x = x, y = y),                                                ## This is the smoothed F0 contour
+                     linetype = 1, colour = F0LineColor, size = 1) + 
+           scale_y_continuous(limits = c(HZLow, HZHigh), name = "F0 Contour [Hz]") + 
+  
+           theme(                                                                                       ## Colors for Y Axis
+                 axis.title.y       = element_text(color = F0LineColor, size=13),
+                 axis.text.y        = element_text(color = F0LineColor, size=13),
+                 axis.ticks.y.left  = element_line(color = F0LineColor, size=0.5),
+                 axis.line.y.left   = element_line(color = F0LineColor, size=0.5),
+                )
+
+ggsave("ID2_1PraatF0plot.png", height = 5.64, width = 8.71, plot = z)
+
+
+##   ------------------   Smooth the peaks and troughs only F0 contour   --------------------------------------------------------------------------------- 
+
+spline.d <- as.data.frame(spline(ID2_1hfex$Time, ID2_1hfex$Hz))                                         ## Smooth peaks and troughs F0 contour in frame spline.d
+
+##
+##   ------------------   Fit a straight line to the Data (Uniform Vibrato)   -------------------------------------------------------------
+##
+
+linmod1 <- lm(ID2_1hfex$Hfex ~ ID2_1hfex$Time, data = ID2_1hfex)
+l <- as.numeric(coef(linmod1))
+
+write.csv(l, paste("ID",id,"_",Sampl,"_","Linmod.csv", sep = ""), row.names = T)
+
+linmod1Tab <- linmod1 %>% tidy() %>% kbl(digits = 2, align = "c", row.names = F) %>%
+     kable_paper(full_width = F) %>%
+     column_spec(1, bold = T)
+
+## save_kable(linmod1Tab,"ID2_1Linearpars.pdf")                                                              ##  Linear parameter fit results to pdf
+
+critlm <- data.frame(AIC(linmod1), BIC(linmod1), row.names = "ID2_1 Linear Regr")                            ##  AIC and BIC from linear regression fit
+colnames(critlm)<-list("AIC","BIC")
+
+##
+##   ------------------   Fit a S-curve (logistic regr) to the Data   -------------------------------------------------------------
+##
+
+slogit<-drm(ID2_1hfex$Hfex ~ ID2_1hfex$Time, fct=LL.4(), data = ID2_1hfex)                              ##   4 parameter logistic regression fit. LL4 or L4 need to match the equation in the function above
+t <- as.numeric(coef(slogit))                                                                           ##   Numeric vector with Slogit parameters b, c, d, e
+
+write.csv(t, paste("ID",id,"_",Sampl,"_","Logitmod.csv", sep = ""), row.names = T)
+
+Table1 <- slogit %>% tidy() %>% kbl(digits=2, align = "c", row.names = F) %>%                           ##   Save Table of Slogit estimates 
+     kable_paper(full_width = F) %>%
+     column_spec(1:2, bold = T)
+
+## save_kable(Table1,"ID2_1Logisticpars.pdf")                                                           ##  Logistic parameter fit results to pdf
+
+critslogit <- data.frame(AIC(slogit), BIC(slogit), row.names = "ID2_1 Logist Regr")                     ##  AIC and BIC from logistic regression fit
+colnames(critslogit)<-list("AIC","BIC")
+
+crits <- rbind(critlm,critslogit)
+
+write.csv(crits, paste("ID",id,"_",Sampl,"_","Crits.csv", sep = ""), row.names = T)                     ##  Save AIC and BIC from linear and logistic regression fit
+
+##
+##   -------------------   Separating and dealing with the phases   ---------------------------------------------------------------
+##
+
+dt     <- t[3] - t[2]                                                                                   ##  Maximum delta between Phase 1 and 2
+tphase <- 0.2                                                                                           ##  Parameter defining the transition phase; 20%
+tlow   <- t[2] + tphase * dt                                                                            ##  Low HE limit of the transition phase
+thigh  <- t[3] - tphase * dt                                                                            ##  High HE limit of the transition phase
+
+##   ------------------   Calculate Phase 1 and 2 segments   -----------------------------------------------------------------------
+
+Limt <- c(t[2], t[3])
+Tran <- c(dt, tphase)
+Phx <- c(solveforx(t, tlow), solveforx(t, thigh))                                                       ##  Calculate the start and the end of the transition phase
+Phy <- c(tlow, thigh)
+TLeng <- c(nrow(ID2_1hfex [ID2_1hfex$Time <= Phx[1], ]), nrow(ID2_1hfex [ID2_1hfex$Time >= Phx[2], ]))    
+TPhase  <- data.frame(Phx, Phy, Limt, TLeng, Tran)
+
+rownames(TPhase) <- list("ID2_1 Phase 1", "ID2_1 Phase 2")
+write.csv(TPhase, paste("ID",id,"_",Sampl,"_","TransPhase.csv", sep = ""), row.names = T)
+
+##
+##  Calculate HE statistics of All data, Phase 1 and Phase 2
+##
+
+smryAll <- ID2_1hfex %>%
+           summarize(mean = mean(Hfex, na.rm = TRUE),
+                     sd = sd(Hfex, na.rm = TRUE),
+                     cv = 100*sd/mean,
+                     min = min(Hfex, na.rm = TRUE),
+                     p5  = quantile(Hfex, probs=0.05, na.rm = TRUE),
+                     p95 = quantile(Hfex, probs=0.95, na.rm = TRUE),
+                     max = max(Hfex, na.rm = TRUE),
+                     n_obs = n(),  
+                     Genre = min(Genre),
+                     ID = min(ID),
+                     Sampl = min(Sampl)) 
+
+
+smryPh1 <- ID2_1hfex [ID2_1hfex$Time <= TPhase[1,1], ] %>%
+           summarize(mean = mean(Hfex, na.rm = TRUE),
+                     sd = sd(Hfex, na.rm = TRUE),
+                     cv = 100*sd/mean,
+                     min = min(Hfex, na.rm = TRUE),
+                     p5  = quantile(Hfex, probs=0.05, na.rm = TRUE),
+                     p95 = quantile(Hfex, probs=0.95, na.rm = TRUE),
+                     max = max(Hfex, na.rm = TRUE),
+                     n_obs = n(),
+                     Genre = min(Genre),
+                     ID = min(ID),
+                     Sampl = min(Sampl)) 
+
+smryPh2 <- ID2_1hfex [ID2_1hfex$Time >= TPhase[2,1], ] %>%
+           summarize(mean = mean(Hfex, na.rm = TRUE),
+                     sd = sd(Hfex, na.rm = TRUE),
+                     cv = 100*sd/mean,
+                     min = min(Hfex, na.rm = TRUE),
+                     p5  = quantile(Hfex, probs=0.05, na.rm = TRUE),
+                     p95 = quantile(Hfex, probs=0.95, na.rm = TRUE),
+                     max = max(Hfex, na.rm = TRUE),
+                     n_obs = n(),
+                     Genre = min(Genre),
+                     ID = min(ID),
+                     Sampl = min(Sampl)) 
+
+
+##  Write Phase 1 and Phase 2 statistics in a csv file
+
+rownames(smryAll) <- list("ID2_1 All")
+rownames(smryPh1) <- list("ID2_1 Phase 1")
+rownames(smryPh2) <- list("ID2_1 Phase 2")
+
+smry <- rbind(smryAll, smryPh1, smryPh2)
+
+##write.csv(smry, "ID2_1smryPhase.csv", row.names = T)
+
+write.csv(smry, paste("ID",id,"_",Sampl,"_","SmryHfex.csv", sep = ""), row.names = T)
+
+##   -----------------------------------------------------------------------------------------------------------------------------------------
+##
+##   ------------------   Prepare and plot all data and S-curve (Yhat) -------------------------------------------------------------
+##
+##
+
+Yhat <- data.frame(fitted.values(slogit), row.names = NULL)
+Yhat$Time <-ID2_1hfex$Time
+
+colnames(Yhat)<-list("Logist", "Time") 
+write.csv(Yhat, paste("ID",id,"_",Sampl,"_","Slogit.csv", sep = ""), row.names = T)
+
+##   ------------------ Plot with yellow bar all data and S-curve (Yhat), not used  ------------------------------------------------
+
+q <- ggplot(ID2_1hfex, aes(x = Time)) + xlab("Time [sec]") +
+           geom_point(aes(y = Hz), colour = "red", size = 3) +                                          ## These are the F0 data points
+           geom_line(data = spline.d, aes(x = x, y = y),                                                ## This is the smoothed F0 contour
+                     linetype = 1, colour = F0LineColor, size = 1) + 
+           geom_point(aes(y = coeff*Hfex+HZLow), colour = HalfExtColor, size = 3) +                     ## These are the Half Extent points
+           geom_line(data = Yhat, aes(x = Time, y = coeff*Logist+HZLow),                                ## This is the Logistic Regression fit
+                     linetype = 2, colour = LogistColor, size = 1) + 
+           geom_line(data = TPhase, aes(x = Phx, y = coeff*1.2*t[3]+HZLow),                             ## The Phase 1 and Phase 2 limits in yellow
+                     linetype = 1, colour = PhaseColor, size = 4) + 
+           scale_y_continuous(limits = c(HZLow, HZHigh), name = "F0 Contour [Hz]", 
+                              sec.axis = sec_axis(~(.-HZLow)/coeff, name="HalfExt [cent]")) +           ## Add a second axis and specify its features
+ 
+           theme(                                                                                       ## Colors for Y Axis
+                 axis.title.y       = element_text(color = F0LineColor, size=13),
+                 axis.text.y        = element_text(color = F0LineColor, size=13),
+                 axis.ticks.y.left  = element_line(color = F0LineColor, size=0.5),
+                 axis.line.y.left  = element_line(color = F0LineColor, size=0.5),
+                 axis.title.y.right = element_text(color = HalfExtColor, size=13),
+                 axis.text.y.right  = element_text(color = HalfExtColor, size=13),
+                 axis.ticks.y.right = element_line(color = HalfExtColor, size=0.5),
+                 axis.line.y.right  = element_line(color = HalfExtColor, size=0.5),
+                )
+
+ggsave("ID2_1F0Halfextplot.png", height = 5.64, width = 8.71, plot = q)
+
+##   ------------------   Color coded plot all data and S-curve (Yhat) -------------------------------------------------------------
+
+qq <- ggplot(ID2_1hfex, aes(x = Time)) + xlab("Time [sec]") +
+           geom_point(aes(y = Hz), colour = "red", size = 3) +                                          ## These are the F0 data points
+
+           geom_line(data = spline.d, aes(x = x, y = y),                                                ## This is the smoothed F0 contour
+                     linetype = 1, colour = F0LineColor, size = 1) + 
+
+           geom_point(data=ID2_1hfex[ID2_1hfex$Time<=TPhase[1,1], ], aes(x=Time, y=coeff*Hfex+HZLow), colour=ColPh1, size=3) +                                     ## These are the Half Extent points Phase 1
+           geom_point(data=ID2_1hfex[ID2_1hfex$Time>=TPhase[2,1], ], aes(x=Time, y=coeff*Hfex+HZLow), colour=ColPh2, size=3) +                                     ## These are the Half Extent points Phase 2
+           geom_point(data=ID2_1hfex[(ID2_1hfex$Time>TPhase[1,1]) & (ID2_1hfex$Time<TPhase[2,1]), ], aes(x=Time, y=coeff*Hfex+HZLow), colour=ColPh0, size=3) +     ## These are the Half Extent points Phase 0
+
+           geom_line(data = Yhat, aes(x = Time, y = coeff*Logist+HZLow),                                ## This is the Logistic Regression fit
+                     linetype = 2, colour = LogistColor, size = 1) + 
+
+           scale_y_continuous(limits = c(HZLow, HZHigh), name = "F0 Contour [Hz]", 
+                              sec.axis = sec_axis(~(.-HZLow)/coeff, name="HalfExt [cent]")) +           ## Add a second axis and specify its features
+ 
+           theme(                                                                                       ## Colors for Y Axis
+                 axis.title.y       = element_text(color = F0LineColor, size=13),
+                 axis.text.y        = element_text(color = F0LineColor, size=13),
+                 axis.ticks.y.left  = element_line(color = F0LineColor, size=0.5),
+                 axis.line.y.left   = element_line(color = F0LineColor, size=0.5),
+                 axis.title.y.right = element_text(color = HalfExtColor, size=13),
+                 axis.text.y.right  = element_text(color = HalfExtColor, size=13),
+                 axis.ticks.y.right = element_line(color = HalfExtColor, size=0.5),
+                 axis.line.y.right  = element_line(color = HalfExtColor, size=0.5),
+                )
+
+ggsave("ID2_1F0Halfextplotvarcol.png", height = 5.64, width = 8.71, plot = qq)
+
+##   ------------------   Plot all data and Linear curve (Yhat) -------------------------------------------------------------
+
+YLhat <- data.frame(fitted.values(linmod1), row.names = NULL)
+YLhat$Time <-ID2_1hfex$Time
+
+colnames(YLhat)<-list("Linear", "Time") 
+write.csv(YLhat, paste("ID",id,"_",Sampl,"_","Linear.csv", sep = ""), row.names = T)
+
+
+p <- ggplot(ID2_1hfex, aes(x = Time)) + xlab("Time [sec]") +
+           geom_point(aes(y = Hz), colour = "red", size = 3) +                                          ## These are the F0 data points
+           geom_line(data = spline.d, aes(x = x, y = y),                                                ## This is the smoothed F0 contour
+                     linetype = 1, colour = F0LineColor, size = 1) + 
+           geom_point(aes(y = coeff*Hfex+HZLow), colour = HalfExtColor, size = 3) +                     ## These are the Half Extent points
+           geom_line(data = YLhat, aes(x = Time, y = coeff*Linear+HZLow),                               ## This is the Linear Regression fit
+                     linetype = 2, colour = LogistColor, size = 1) + 
+#           geom_line(data = TPhase, aes(x = Phx, y = coeff*1.2*t[3]+HZLow),                             ## The Phase 1 and Phase 2 limits in yellow
+#                     linetype = 1, colour = PhaseColor, size = 4) + 
+           scale_y_continuous(limits = c(HZLow, HZHigh), name = "F0 Contour [Hz]", 
+                              sec.axis = sec_axis(~(.-HZLow)/coeff, name="HalfExt [cent]")) +           ## Add a second axis and specify its features
+ 
+           theme(                                                                                       ## Colors for Y Axis
+                 axis.title.y       = element_text(color = F0LineColor, size=13),
+                 axis.text.y        = element_text(color = F0LineColor, size=13),
+                 axis.ticks.y.left  = element_line(color = F0LineColor, size=0.5),
+                 axis.line.y.left   = element_line(color = F0LineColor, size=0.5),
+                 axis.title.y.right = element_text(color = HalfExtColor, size=13),
+                 axis.text.y.right  = element_text(color = HalfExtColor, size=13),
+                 axis.ticks.y.right = element_line(color = HalfExtColor, size=0.5),
+                 axis.line.y.right  = element_line(color = HalfExtColor, size=0.5),
+                )
+
+ggsave("ID2_1F0LinearHalfextplot.png", height = 5.64, width = 8.71, plot = p)
+
+
+##   -------------------------------------------------------------------------------------------------------------------------------------------------
+##
+##   ------------------   Create a word document to contain R outputs -------------------------------------------------------------
+##
+##
+
+# Create Word document
+
+doc <- read_docx()
+
+# Add a title to the document
+
+doc <- body_add_par(doc, value = paste("ID",id,"_",Sampl," M ","Analysis Results", sep = ""), style = "heading 1")
+# doc <- body_add_par(doc, value = "This Word document is created using R software and Officer package", style = "Normal")
+
+doc <- body_add_par(doc, " ")
+doc <- body_add_par(doc, " ")
+
+#
+# Add tables to the document
+#
+
+# Statistical summary of HalfExt - all and by phase
+
+doc <- body_add_par(doc, value = "Statistical summary of HalfExtent [cent] - all and by phase", style = "heading 2")
+
+smryl <- dplyr::select(smry, mean, sd, cv, min, p5, p95, max, n_obs)
+smryl <- signif(smryl, digits = 3)
+smryr <- cbind(data.frame(Phase = row.names(smryl)), smryl)
+
+doc <- body_add_table(doc, smryr, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, " ")
+
+# Linear and Logistical Fit Parameters and Discrimination Criteria
+
+doc <- body_add_par(doc, value = "Linear Fit Parameters", style = "heading 2")
+
+l <- as.data.frame(coef(linmod1))
+rownames(l) <- list("Intercept [cent]", "Slope [cent/sec]")
+ll <- cbind(data.frame(Parameter = row.names(l)), signif(l, digits = 4))
+doc <- body_add_table(doc, ll, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, " ")
+
+doc <- body_add_par(doc, value = "Logistic Fit Parameters", style = "heading 2")
+
+t <- as.data.frame(coef(slogit))
+rownames(t) <- list("Transition Parameter - b", "Phase 1 Halfextent [cent] - c", "Phase 2 Halfextent [cent] - d", "Middle Time Value [sec] - e")
+tl <- cbind(data.frame(Parameter = row.names(t)), signif(t, digits = 5))
+doc <- body_add_table(doc, tl, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, " ")
+
+doc <- body_add_par(doc, value = "Information Criteria for Fits", style = "heading 2")
+
+critsl <- cbind(data.frame(Parameter = row.names(crits)), signif(crits, digits = 5))
+doc <- body_add_table(doc, critsl, style = "Normal Table", align_table = "center")
+
+
+doc <- body_add_break(doc)                                                        # Go to the next page
+
+
+# Parameters of the Transition Phase
+
+doc <- body_add_par(doc, value = "Parameters of the Transition Phase", style = "heading 2")
+
+TPhasel <- cbind(data.frame(Parameter = row.names(TPhase)), signif(TPhase, digits = 5))
+doc <- body_add_table(doc, TPhasel, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, value = "Legend:", style = "centered")
+doc <- body_add_par(doc, value = "Phx - End of Phase 1 / Start of Phase 2 [sec]", style = "centered")
+doc <- body_add_par(doc, value = "Phy - Halfextent Threshold for Phase Detection [cent]", style = "centered")
+doc <- body_add_par(doc, value = "Limt - Halfextent of Respective Phase [cent]", style = "centered")
+doc <- body_add_par(doc, value = "Tleng - Number of Points per Phase", style = "centered")
+doc <- body_add_par(doc, value = "Tran - Halfextents Jump [cents] (row 1); Detection parameter (row 2)", style = "centered")
+
+
+doc <- body_add_break(doc)                                                        # Go to the next page
+
+
+# Add plots
+
+# F0 - contour
+
+doc <- body_add_par(doc, " ")
+doc <- body_add_par(doc, value = "Plot of F0 contour from Praat", style = "Image Caption")
+
+doc <- body_add_gg(doc, value = z, style = "centered", width = 7.5, height = 4.5)
+
+doc <- body_add_par(doc, value = "Legend:", style = "centered")
+doc <- body_add_par(doc, value = "Line - spline interpolated F0 curve", style = "centered")
+doc <- body_add_par(doc, value = "Crosses - Praat generated F0 points", style = "centered")
+doc <- body_add_par(doc, value = "Red dots - F0 peaks and troughs", style = "centered")
+
+doc <- body_add_break(doc) # Go to the next page
+
+
+# F0 fitting graph - logistic regression
+
+doc <- body_add_par(doc, value = "Plot of F0 contour fit - Logistic Regression", style = "Image Caption")
+
+doc <- body_add_gg(doc, value = qq, style = "centered", width = 7.5, height = 4.5)
+
+doc <- body_add_par(doc, value = "Legend:", style = "centered")
+doc <- body_add_par(doc, value = "Grey Line - spline interpolated F0 curve", style = "centered")
+doc <- body_add_par(doc, value = "Red dots - F0 peaks and troughs", style = "centered")
+doc <- body_add_par(doc, value = "Magenta dots - Half-extents of Phase 1", style = "centered")
+doc <- body_add_par(doc, value = "Yellow dots - Half-extents of Transition", style = "centered")
+doc <- body_add_par(doc, value = "Blue dots - Half-extents of Phase 2", style = "centered")
+doc <- body_add_par(doc, value = "Black Line - Logistic Fit to the Halfextents", style = "centered")
+
+doc <- body_add_break(doc) # Go to the next page
+
+# F0 fitting graph - linear regression
+
+doc <- body_add_par(doc, value = "Plot of F0 contour fit - Linear Regression", style = "Image Caption")
+
+doc <- body_add_gg(doc, value = p, style = "centered", width = 7.5, height = 4.5)
+
+doc <- body_add_par(doc, value = "Legend:", style = "centered")
+doc <- body_add_par(doc, value = "Grey Line - spline interpolated F0 curve", style = "centered")
+doc <- body_add_par(doc, value = "Red dots - F0 peaks and troughs", style = "centered")
+doc <- body_add_par(doc, value = "Blue dots - Half-extents", style = "centered")
+doc <- body_add_par(doc, value = "Black Line - Linear Fit to the Halfextents", style = "centered")
+
+doc <- body_add_break(doc) # Go to the next page
+
+
+# Write the Word document to a file 
+
+doc <- body_end_section_landscape(doc)
+
+print(doc, target = paste("ID",id,"_",Sampl,"_","Analysis Results.docx", sep = ""))
+
+
+
+
+
+
+
+

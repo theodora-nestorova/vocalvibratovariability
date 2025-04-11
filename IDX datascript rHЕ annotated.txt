@@ -1,0 +1,217 @@
+## -----------------------------------------------------
+##
+## Script for Data Prep Before Analysis, Nov 2024
+##
+## -----------------------------------------------------
+
+
+## clear memory
+
+rm(list = ls())
+
+# install packages and load libraries
+
+install.packages("drc")
+install.packages("janitor")
+install.packages("lme4")
+install.packages("broom.mixed")
+
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(broom)
+library(knitr)
+library(broom.mixed)
+library(ggplot2)
+
+library(drc)
+library(lme4)
+library(nlme)
+
+library(kableExtra)
+
+## -----------------------------------------------------
+##
+## Prepare for Data Prep
+##
+
+## Prepare the Working Directory
+
+wd<-"C:/Teddy/Research/Oct 2024/1 CN/1 Analysis"
+setwd(wd)
+
+##   ------------------   Function to Extract TOPs and BOTs from the data   -------------------------------------------------------------
+
+f0_to_halfextind <- function(f0) {                                   ## Input f0 contour - the vector of the Hz for the sample in Hz
+
+##
+## Detect peaks and troughs in a character string. 10 transition is a peak; 01 - trough
+##
+
+dup<-diff(f0)                                                        ## Detect UP as positive differences in diff()
+cup<-as.character(dup>0)                                             ## Convert dup as logical vector with TRUE where dup>0 to character string
+cupa <- rep(0, length(cup))
+cupa [cup == "TRUE"] <- 1                                            ## Code as 1 (HZ going up) and 0 (HZ going down)
+
+cupchar <- as.character(cupa)                                        ## Convert numerical vector to vector of character strings
+cupstrg <- paste0(cupchar,collapse="")                               ## Convert vector of strings to single character string
+
+##
+##   Detect the position of "10" = TOP and "01" = BOT combinations
+##
+
+pos10 <- gregexpr("10", cupstrg)                                     ## Detect 10 in cupstr - UP to DOWN transition, indicating a TOP
+pos01 <- gregexpr("01", cupstrg)                                     ## Detect 01 in cupstr - DOWN to UP transition, indicating a BOT
+
+tops1 <- data.frame(II=pos10[[1]][1:length(pos10[[1]])]+1, TB = "top")     ## How many tops?
+bots1 <- data.frame(II=pos01[[1]][1:length(pos01[[1]])]+1, TB = "bot")     ## How many bottoms?
+
+tb <- rbind(tops1, bots1)                                            ## Merge tops and bots and sort
+tb <- tb[order(tb$II),]
+
+  return(tb)                                                         ## tb$II - the indeces of the Mins and Maxes in f0 contour
+}
+
+##   ------------------------------------------------------------------------------------------------------------------------------------
+
+##   ------------------------------------------------------------------------------------------------------------------------------------
+##
+##   Read and Prepare the data 
+##
+##   This example is for ID1, genre - O, initials CN
+##
+##   ------------------------------------------------------------------------------------------------------------------------------------
+
+id <- 1
+genre <- "O"
+
+##   Prepare to read the files 
+
+myfiles = list.files(pattern="_O_CN.txt")                                       #  list of all data files for this ID, will contain filenames from Praat:
+                                                                                #  "A3_O_CN.txt"     "A4_O_CN.txt"     "C4_O_CN.txt"     "C5_O_CN.txt"     "E5_O_CN.txt"     "easy_O_CN.txt"
+                                                                                #  "found_O_CN.txt"  "G5_O_CN.txt"     "grace_O_CN.txt"  "high_O_CN.txt"   "jumpin_O_CN.txt" "lookin_O_CN.txt"
+                                                                                #  "me_O_CN.txt"     "rich_O_CN.txt"   "see_O_CN.txt"    "time_O_CN.txt"   
+
+Sampnum <- c( 7, 9, 8, 10, 11, 2, 15, 12, 13, 4, 3, 6, 14, 5, 16, 1)            # List of mapping between sample names above and sample numbers for 16 samples
+
+##   Prepare the files to store data
+
+smryHfex = data.frame(matrix(ncol = 0, nrow = 0))                               # Initialize dataframes for statistical summaries
+smryHz   = data.frame(matrix(ncol = 0, nrow = 0))
+col_order <- c("ID", "Genre", "Sampl", "NTime", "Time", "Hz")
+sigdig <- 4                                                                     # Significant digits
+
+##   ------------------------------------------------------------------------------------------------------------------------------------
+##
+##   Cycle through each of the Sample files
+##
+##   ------------------------------------------------------------------------------------------------------------------------------------
+
+i <- 0
+for (file in myfiles){
+    i <- i+1
+
+    datafr <- read.delim(file, header = FALSE, col.names = c("NTime", "Hz"))   ## Read original Sample .txt file from Praat
+    datafr$Sampl <- Sampnum[i]                                                 ## Assign number from the mapping
+
+    start_time = min(datafr$NTime)                                             ## Sample Starting time
+    datafr$Time <- datafr$NTime - start_time                                   ## Calculate Time since Start of Sample
+
+    datafr$ID <- id                                                            ## ID item
+    datafr$Genre <- genre                                                      ## Genre item
+
+    datafr <- datafr[, col_order]                                              ## Order columns
+
+    datafrclean <- datafr[datafr$Hz != "--undefined--",]                       ## Remove junk --- here we could also filter outliers if we want
+    datafrclean$Hz <- as.numeric(datafrclean$Hz)                               ## Convert Hz to numeric
+
+    datafrclean$Cent<-1200*(log(datafrclean$Hz/100)/log(2))                    ## Hz to Cent conversion, reference point 100 Hz
+
+##  Call the function to identify tops and botoms
+
+    topbot <- f0_to_halfextind(datafrclean$Hz)                                 ## This dataframe contains the tops and bottoms and their indices (topbot$II) in the dataset
+    datafrhext <- datafrclean[topbot$II,]                                      ## Extract only tops and bottoms from the data 
+
+##  Calculate Halfextent as HoE 
+
+    hfmean = mean(datafrhext$Cent, na.rm = TRUE)                               ## New - calculate mean f0
+    hfex <-  abs(datafrhext$Cent-hfmean)                                       ## New - Calculate Halfextents as rHE
+
+    datafrhext$Hfex <- hfex                                                    ## New - store in dataframe for output
+    datafrhext$TB <- topbot$TB                                                 ## New - store in dataframe for output
+
+##  Store results in dataframes and export them to files
+
+    assign(paste("ID",id,"_",Sampnum[i], "topbot", sep = ""), topbot)             ## Prepare names of Output files
+    assign(paste("ID",id,"_",Sampnum[i], "hfex", sep = ""), datafrhext)
+    assign(paste("ID",id,"_",Sampnum[i], "clean", sep = ""), datafrclean)
+    assign(paste("ID",id,"_",Sampnum[i], "data", sep = ""), datafr)
+
+    write.csv(datafrhext,paste("ID",id,"_",Sampnum[i], "hfex.csv", sep = ""), row.names = F)         ## IDXX_YYhfex.csv  - Primary input file for IDXX_YY plotscript.txt script
+    write.csv(datafrclean,paste("ID",id,"_",Sampnum[i], "clean.csv", sep = ""), row.names = F)       ## IDXX_YYclean.csv - Secondary input file for IDXX_YY plotscript.txt script
+    write.csv(datafr,paste("ID",id,"_",Sampnum[i], "data.csv", sep = ""), row.names = F)             ## IDXX_YYdata.csv  - Output file
+
+##  Calculate statistics
+
+smryhextHfex <- datafrhext %>%
+                summarize(mean = mean(Hfex, na.rm = TRUE),                                           ## Calculate statistics for f0 contour with HoE
+                        sd = sd(Hfex, na.rm = TRUE),
+                        cv = 100*sd/mean,
+                        min = min(Hfex, na.rm = TRUE),
+                        p5  = quantile(Hfex, probs=0.05, na.rm = TRUE),
+                        p95 = quantile(Hfex, probs=0.95, na.rm = TRUE),
+                        max = max(Hfex, na.rm = TRUE),
+                        n_obs = n()-1,
+                        Genre = min(Genre),
+                        ID = min(ID),
+                        Sampl = min(Sampl)) 
+
+smryHfex <- rbind(smryHfex, smryhextHfex)                                                           ## Add statistics for f0 contour with HoE for Sample YY
+
+smryhextHz <- datafrhext %>%
+              summarize(mean = mean(Hz, na.rm = TRUE),                                              ## Calculate statistics for f0 contour with HZ
+                        sd = sd(Hz, na.rm = TRUE),
+                        cv = 100*sd/mean,
+                        min = min(Hz, na.rm = TRUE),
+                        p5  = quantile(Hz, probs=0.05, na.rm = TRUE),
+                        p95 = quantile(Hz, probs=0.95, na.rm = TRUE),
+                        max = max(Hz, na.rm = TRUE),
+                        n_obs = n(),
+                        Genre = min(Genre),
+                        ID = min(ID),
+                        Sampl = min(Sampl)) 
+
+smryHz <- rbind(smryHz, smryhextHz)                                                               ## Add statistics for f0 contour with HZ for Sample YY
+
+}                                                                                                 ## End of Cycle on all samples for IDXX
+
+##   ------------------------------------------------------------------------------------------------------------------------------------
+##
+##   End of Cycle through each of the Sample files
+##
+##   ------------------------------------------------------------------------------------------------------------------------------------
+
+##   Do some Housekeeping on the summary files - order of columns and sort by Sample
+
+    col_ordersmry <- c("ID", "Genre", "Sampl", "mean", "sd", "cv", "min", "p5", "p95", "max", "n_obs")     ## Prepare fames for output files
+
+    smryHfex <- smryHfex[, col_ordersmry]                                                                  ## Column order of HoE
+    smryHfex <- smryHfex[order(smryHfex$Sampl),]                                                           ## Order Samples by their No
+    smryHfex <- format(smryHfex, digits=sigdig)                                                            ## Format Significant digits
+    smryHz <- smryHz[, col_ordersmry]                                                                      ## Column order of HZ
+    smryHz <- smryHz[order(smryHz$Sampl),]                                                                 ## Order Samples by their No
+    smryHz <- format(smryHz, digits=sigdig)                                                                ## Format Significant digits
+
+##   Assign names and save the summary files - order of columns and sort by Sample
+
+    assign(paste("ID",id,"_","smryHfex", sep = ""), smryHfex)                                              ## Prepare names of Output files
+    assign(paste("ID",id,"_","smryHz", sep = ""), smryHz)
+
+    write.csv(smryHfex,paste("ID",id,"_","smryHfex.csv", sep = ""), row.names = F)                         ## IDXXsmryHfex.csv - Output file with summary statistics for IDXX for HoE
+    write.csv(smryHz,paste("ID",id,"_","smryHz.csv", sep = ""), row.names = F)                             ## IDXXsmryHz.csv   - Output file with summary statistics for IDXX for HZ
+
+##   ------------------------------------------------------------------------------------------------------------------------------------
+##
+##   This is all 
+##
+##   ------------------------------------------------------------------------------------------------------------------------------------

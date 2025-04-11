@@ -1,0 +1,418 @@
+##
+## Summary Analysis Script Feb 2025
+##
+## clear memory
+
+rm(list = ls())
+
+# load libraries
+
+library(tidyverse)
+library(officer)
+library(readxl)
+library(janitor)
+library(broom)
+library(knitr)
+library(broom.mixed)
+library(ggplot2)
+
+library(drc)
+library(lme4)
+library(nlme)
+
+library(kableExtra)
+
+## read in the data
+
+wd<-"C:/Teddy/Research/Feb 2025/13 LT/Analysis"                                  # Set the working folder
+setwd(wd)
+
+# --------------------------------------------------------------------------------------------------------------------------------
+##
+##
+##   ------------------   Read and Prepare the data   -----------------------------------------------------------------------------------
+##
+##
+
+id <- 13                                                                         # This ID
+genre <- "O"                                                                     # This Genre
+
+Linfiles = list.files(pattern="_Linmod.csv")                                     # list of Linear model data files for this ID
+Logitfiles = list.files(pattern="_Logitmod.csv")                                 # list of Logistic model files for this ID
+Smryfiles = list.files(pattern="_SmryHfex.csv")                                  # list of Summary files for this ID
+
+Logitnum <- c( 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16)                   # List of Logistic sample numbers
+Linnum <- c( 7, 14)                                                              # List of Linear sample numbers
+
+smryAll1 = data.frame(matrix(ncol = 0, nrow = 0))                                # Initialize dataframes for statistical summaries
+smryAll2 = data.frame(matrix(ncol = 0, nrow = 0))                                # Initialize dataframes for statistical summaries
+smryPh1  = data.frame(matrix(ncol = 0, nrow = 0))
+smryPh2  = data.frame(matrix(ncol = 0, nrow = 0))
+smryLgt  = data.frame(matrix(ncol = 0, nrow = 0))
+smryLin  = data.frame(matrix(ncol = 0, nrow = 0))
+smryTran = data.frame(matrix(ncol = 0, nrow = 0))
+
+col_order <- c("ID", "Genre", "Sampl", "NTime", "Time", "Hz")
+sigdig <- 4                                                                     # Significant digits
+
+
+# --------------------------------------------------------------------------------------------------------------------------------
+##
+##
+##   Cycle through each of the Sample files
+##   These files have been generated from IDX_Y plotscript.txt scripts
+##   There is one set of output files for each individual X and each Sample Y 
+##
+##
+
+
+# --------------------------------------------------------------------------------------------------------------------------------
+##
+##   Cycle for Logistic Regression
+##
+
+for (isam in Logitnum){
+
+     file <- paste("ID",id,"_",isam,"_","SmryHfex.csv", sep = "")               # Read file of HE statistical summaries from the f0 profiles
+     smry <- read.csv(file , header = T)
+
+     smryAll1 <- rbind(smryAll1, smry[1, ])                                     # Insert summaries by Phase: All, Phase 1, Phase 2
+     smryPh1  <- rbind(smryPh1,  smry[2, ])
+     smryPh2  <- rbind(smryPh2,  smry[3, ])
+
+     file2 <- paste("ID",id,"_",isam,"_","Logitmod.csv", sep = "")               # Read file of Logistic Function parameters
+     smry2 <- read.csv(file2 , header = T)
+
+     smryLgt <-  rbind(smryLgt, data.frame(smry2$x[1], smry2$x[2], smry2$x[3], smry2$x[4])) 
+
+     file3 <- paste("ID",id,"_",isam,"_","Transphase.csv", sep = "")             # Read file of Transition Phase parameters
+     smry3 <- read.csv(file3 , header = T)
+
+     smryTran <-  rbind(smryTran, data.frame(smry3$Limt[1], smry3$Limt[2], smry3$Tran[1], smry3$Tran[2], 
+                                             smry3$Phy[1], smry3$Phy[2], smry3$Phx[2]-smry3$Phx[1])) 
+
+}
+
+##   Statistical summaries for Logistic Regression
+
+  smrysmryAll1 <- smryAll1 %>%                                                   # Statistical summaries of all complex samples f0 by Phase: All, Phase 1, Phase 2
+                summarize(meanmean = mean(mean, na.rm = TRUE),
+                        meansd = mean(sd, na.rm = TRUE),
+                        meancv = mean(cv, na.rm = TRUE))
+
+  smrysmryPh1 <- smryPh1 %>%
+                summarize(meanmean = mean(mean, na.rm = TRUE),
+                        meansd = mean(sd, na.rm = TRUE),
+                        meancv = mean(cv, na.rm = TRUE))
+
+  smrysmryPh2 <- smryPh2 %>%
+                summarize(meanmean = mean(mean, na.rm = TRUE),
+                        meansd = mean(sd, na.rm = TRUE),
+                        meancv = mean(cv, na.rm = TRUE))
+
+  smryS <- rbind(smrysmryAll1, smrysmryPh1, smrysmryPh2)
+
+  colnames(smryLgt)<-list("Par_b", "Par_c", "Par_d", "Par_e")  
+  smrysmryLgt <- smryLgt %>%                                                      # Statistical summaries of all complex samples logistic function parameters
+                summarize(meanPar_b = mean(Par_b, na.rm = TRUE),
+                        meanPar_c = mean(Par_c, na.rm = TRUE),
+                        meanPar_d = mean(Par_d, na.rm = TRUE),
+                        meanPar_e = mean(Par_e, na.rm = TRUE))
+
+  colnames(smryTran)<-list("Ph1hfex", "Ph2hfex", "Dltahfex", "Tranthre", "Ph1thre", "Ph2thre", "OnsetT")  
+  smrysmryTran <- smryTran %>%                                                    # Statistical summaries of all complex samples Transition Phase parameters
+                summarize(meanPh1hfex  = mean(Ph1hfex, na.rm = TRUE),
+                          meanPh2hfex  = mean(Ph2hfex, na.rm = TRUE),
+                          meanDltahfex = mean(Dltahfex, na.rm = TRUE),
+                          meanTranthre = mean(Tranthre, na.rm = TRUE),
+                          meanPh1thre  = mean(Ph1thre, na.rm = TRUE),
+                          meanPh2thre  = mean(Ph2thre, na.rm = TRUE),
+                          meanOnsetT   = mean(OnsetT, na.rm = TRUE))
+
+
+##   Save summary files for Logistic Regression in Excel csv Format
+
+colnames(smryAll1)[1] <- 'Sample_ID'
+colnames(smryPh1)[1]  <- 'Sample_ID'
+colnames(smryPh2)[1]  <- 'Sample_ID'
+
+write.csv(smryAll1, paste("ID",id,"_","All_Logit.csv", sep = ""), row.names = F)         # Statistical summaries of all complex samples f0 for All observation (no phases)
+write.csv(smryPh1, paste("ID",id,"_","Ph1_Logit.csv", sep = ""), row.names = F)          # Statistical summaries of all complex samples f0 for Phase 1
+write.csv(smryPh2, paste("ID",id,"_","Ph2_Logit.csv", sep = ""), row.names = F)          # Statistical summaries of all complex samples f0 for Phase 2
+
+Data_from <- c("All", "Phase 1", "Phase 2")
+smryS <- cbind(Data_from, smryS)
+write.csv(smryS, paste("ID",id,"_","Summary_Logit_Hfext.csv", sep = ""), row.names = F)  # Statistical summaries of all complex samples
+
+smryLgt <- cbind(smryAll1$Sample_ID, smryLgt)
+colnames(smryLgt)[1]  <- 'Sample_ID'
+write.csv(smryLgt, paste("ID",id,"_","Pars_Logit.csv", sep = ""), row.names = F)         # Statistical summaries of parameters of all complex samples logistic functions
+
+smryTran <- cbind(smryAll1$Sample_ID, smryTran)
+colnames(smryTran)[1]  <- 'Sample_ID'
+write.csv(smryTran, paste("ID",id,"_","Pars_Transit.csv", sep = ""), row.names = F)      # Statistical summaries of the parameters of all complex samples Transition Phases
+
+Data_from <- c("All Logits")
+smrysmryLgt <- cbind(Data_from, smrysmryLgt)
+write.csv(smrysmryLgt, paste("ID",id,"_","Summary_Logit_Pars.csv", sep = ""), row.names = F)     # Summaries of Summaries of all complex samples logistic function parameters
+
+smrysmryTran <- cbind(Data_from, smrysmryTran)
+write.csv(smrysmryTran, paste("ID",id,"_","Summary_Transit_Pars.csv", sep = ""), row.names = F)  # Summaries of Summaries of all complex samples Transition Phase parameters
+
+
+# colnames(smryS) <- list("Data from", "Average Mean HFext [cent]", "Average sd HFext [cent]", "Average CV HFext [%]")
+
+# --------------------------------------------------------------------------------------------------------------------------------
+##
+##   Cycle for Linear Regression
+##
+
+for (isam in Linnum){
+
+     file <- paste("ID",id,"_",isam,"_","SmryHfex.csv", sep = "")                    # Statistical summaries of HE for all simple samples f0
+     smry <- read.csv(file , header = T)
+
+     smryAll2 <- rbind(smryAll2, smry[1, ])
+
+     file2 <- paste("ID",id,"_",isam,"_","Linmod.csv", sep = "")                     # Statistical summaries of linear regression parameters for all simple samples f0
+     smry2 <- read.csv(file2 , header = T)
+
+     smryLin <-  rbind(smryLin, data.frame(smry2$x[1], smry2$x[2])) 
+
+}
+
+  smrysmryAll2 <- smryAll2 %>%
+                summarize(meanmean = mean(mean, na.rm = TRUE),                       # Statistical summaries of the summaries for all simple samples f0
+                        meansd = mean(sd, na.rm = TRUE),
+                        meancv = mean(cv, na.rm = TRUE))
+
+  colnames(smryLin) <- list("Intercept", "Slope")
+  smrysmryLin <- smryLin %>%
+                summarize(meanInter = mean(Intercept, na.rm = TRUE),
+                        meanSlope = mean(Slope, na.rm = TRUE))
+
+##   Save files for Linear Regression in Excel csv Format
+
+colnames(smryAll2)[1] <- 'Sample_ID'
+write.csv(smryAll2, paste("ID",id,"_","All_Linear.csv", sep = ""), row.names = F)
+
+Data_from <- c("All Linear")
+smrysmryAll2 <- cbind(Data_from, smrysmryAll2)
+write.csv(smrysmryAll2, paste("ID",id,"_","Summary_Linear_Hfext.csv", sep = ""), row.names = F)
+
+smryLin <- cbind(smryAll2$Sample_ID, smryLin)
+colnames(smryLin)[1]  <- 'Sample_ID'
+write.csv(smryLin, paste("ID",id,"_","Pars_Linear.csv", sep = ""), row.names = F)
+
+smrysmryLin <- cbind(Data_from, smrysmryLin)
+write.csv(smrysmryLin, paste("ID",id,"_","Summary_Linear_Pars.csv", sep = ""), row.names = F)
+
+# --------------------------------------------------------------------------------------------------------------------------------
+#
+##   ------------------   Create a word document to contain R outputs -------------------------------------------------------------
+##                        The name of the file is "ID_X General Analysis Results.docx"    
+#
+#                         The following script is self-explanatory
+#
+
+# Create Word document
+
+doc <- read_docx()
+
+# Add a title to the document
+
+doc <- body_add_par(doc, value = paste("ID",id,"_","M","_","Summarized Analysis Results", sep = ""), style = "heading 1")
+
+# doc <- body_add_par(doc, " ")
+
+#
+# Add tables to the document
+#
+
+# Summary of HalfExt by vibrato type, sample and by Phase
+
+doc <- body_add_par(doc, value = "Complex Vibrato - HalfExtent Results by Sample and by Phase", style = "heading 2")
+
+doc <- body_add_par(doc, value = "Complex Vibrato - HalfExtent Results by Sample, All data", style = "heading 3")
+
+smryAll1t <- dplyr::select(smryAll1, mean, sd, cv, min, p5, p95, max, n_obs)
+smryAll1t <- signif(smryAll1t, digits = 3)
+smryAll1t <- cbind(smryAll1$Sample_ID, smryAll1t)
+colnames(smryAll1t)[1] <- 'Sample_ID'
+
+doc <- body_add_table(doc, smryAll1t, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, value = "Complex Vibrato - HalfExtent Results by Sample, Phase 1 data", style = "heading 3")
+
+smryPh1t <- dplyr::select(smryPh1, mean, sd, cv, min, p5, p95, max, n_obs)
+smryPh1t <- signif(smryPh1t, digits = 3)
+smryPh1t <- cbind(smryPh1$Sample_ID, smryPh1t)
+colnames(smryPh1t)[1] <- 'Sample_ID'
+
+doc <- body_add_table(doc, smryPh1t, style = "Normal Table", align_table = "center")
+
+doc <- body_add_break(doc)                                                        # Go to the next page
+
+doc <- body_add_par(doc, value = "Complex Vibrato - HalfExtent Results by Sample, Phase 2 data", style = "heading 3")
+
+smryPh2t <- dplyr::select(smryPh2, mean, sd, cv, min, p5, p95, max, n_obs)
+smryPh2t <- signif(smryPh2t, digits = 3)
+smryPh2t <- cbind(smryPh2$Sample_ID, smryPh2t)
+colnames(smryPh2t)[1] <- 'Sample_ID'
+
+doc <- body_add_table(doc, smryPh2t, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, " ")
+
+doc <- body_add_par(doc, value = "Legend:", style = "centered")
+doc <- body_add_par(doc, value = "mean - Average Halfextent per sample [cent]", style = "centered")
+doc <- body_add_par(doc, value = "sd - Standard Deviation of Halfextent per sample [cent]", style = "centered")
+doc <- body_add_par(doc, value = "cv - Coeff of Variation of Halfextent per sample [%]", style = "centered")
+doc <- body_add_par(doc, value = "min - Minimal Halfextent per sample [cent]", style = "centered")
+doc <- body_add_par(doc, value = "p5 - 5th Percentile of Halfextents per sample [cent]", style = "centered")
+doc <- body_add_par(doc, value = "p95 - 95th Percentile of Halfextents per sample [cent]", style = "centered")
+doc <- body_add_par(doc, value = "max - Maximal Halfextent per sample [cent]", style = "centered")
+doc <- body_add_par(doc, value = "n_obs - Number of Halfextent observations per sample [cent]", style = "centered")
+
+doc <- body_add_break(doc)                                                        # Go to the next page
+
+
+# Summary of Summary of HalfExt by vibrato sample and by Phase
+
+
+doc <- body_add_par(doc, value = "Complex Vibrato - summary of HalfExtent [cent] over all samples, All data and by Phase", style = "heading 2")
+
+smryS$meanmean <- signif(smryS$meanmean, digits = 3)
+smryS$meansd <- signif(smryS$meansd, digits = 3)
+smryS$meancv <- signif(smryS$meancv, digits = 3)
+
+doc <- body_add_table(doc, smryS, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, " ")
+
+doc <- body_add_par(doc, value = "Legend:", style = "centered")
+doc <- body_add_par(doc, value = "meanmean - Average Halfextent over all complex samples [cent]", style = "centered")
+doc <- body_add_par(doc, value = "meansd - Average Standard Deviation of Halfextent  over all complex samples [cent]", style = "centered")
+doc <- body_add_par(doc, value = "meancv - Average Coeff of Variation of Halfextent  over all complex samples [%]", style = "centered")
+
+doc <- body_add_break(doc)                                                        # Go to the next page
+
+
+# Summary of Logistic Function parameters by vibrato sample and by Phase
+
+
+doc <- body_add_par(doc, value = "Complex Vibrato - Logistic Function Parameters", style = "heading 2")
+doc <- body_add_par(doc, " ")
+
+doc <- body_add_par(doc, value = "Complex Vibrato - Logistic Function Parameters, List by by Sample", style = "heading 3")
+
+smryLgt$Par_b <- signif(smryLgt$Par_b, 3)
+smryLgt$Par_c <- signif(smryLgt$Par_c, 3)
+smryLgt$Par_d <- signif(smryLgt$Par_d, 3)
+smryLgt$Par_e <- signif(smryLgt$Par_e, 3)
+
+doc <- body_add_table(doc, smryLgt, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, value = "Complex Vibrato - Averaged Logistic Parameters over all samples", style = "heading 3")
+
+smrysmryLgt$meanPar_b <- signif(smrysmryLgt$meanPar_b, 3)
+smrysmryLgt$meanPar_c <- signif(smrysmryLgt$meanPar_c, 3)
+smrysmryLgt$meanPar_d <- signif(smrysmryLgt$meanPar_d, 3)
+smrysmryLgt$meanPar_e <- signif(smrysmryLgt$meanPar_e, 3)
+
+doc <- body_add_table(doc, smrysmryLgt, style = "Normal Table", align_table = "center")
+
+doc <- body_add_break(doc)                                                        # Go to the next page
+
+
+# Summary of Transition Phase parameters
+
+
+doc <- body_add_par(doc, value = "Complex Vibrato - Transition Phase Parameters", style = "heading 2")
+
+doc <- body_add_par(doc, value = "Complex Vibrato - Transition Phase Parameters, List by by Sample", style = "heading 3")
+
+smryTran$Ph1hfex <- signif(smryTran$Ph1hfex, 3)
+smryTran$Ph2hfex <- signif(smryTran$Ph2hfex, 3)
+smryTran$Dltahfex <- signif(smryTran$Dltahfex, 3)
+smryTran$Tranthre <- signif(smryTran$Tranthre, 3)
+smryTran$Ph1thre <- signif(smryTran$Ph1thre, 3)
+smryTran$Ph2thre <- signif(smryTran$Ph2thre, 3)
+smryTran$OnsetT <- signif(smryTran$OnsetT, 3)
+
+doc <- body_add_table(doc, smryTran, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, value = "Complex Vibrato - Averaged Transition Phase Parameters over all samples", style = "heading 3")
+
+smrysmryTran$meanPh1hfex <- signif(smrysmryTran$meanPh1hfex, 3)
+smrysmryTran$meanPh2hfex <- signif(smrysmryTran$meanPh2hfex, 3)
+smrysmryTran$meanDltahfex <- signif(smrysmryTran$meanDltahfex, 3)
+smrysmryTran$meanTranthre <- signif(smrysmryTran$meanTranthre, 3)
+smrysmryTran$meanPh1thre <- signif(smrysmryTran$meanPh1thre, 3)
+smrysmryTran$meanPh2thre <- signif(smrysmryTran$meanPh2thre, 3)
+smrysmryTran$meanOnsetT <- signif(smrysmryTran$meanOnsetT, 3)
+
+doc <- body_add_table(doc, smrysmryTran, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, " ")
+
+doc <- body_add_par(doc, value = "Legend:", style = "centered")
+doc <- body_add_par(doc, value = "Ph1hfex  - Halfextent of Phase 1 from Logistic curve [cent] (see also Par_c)", style = "centered")
+doc <- body_add_par(doc, value = "Ph2hfex  - Halfextent of Phase 2 from Logistic curve [cent] (see also Par_d)", style = "centered")
+doc <- body_add_par(doc, value = "Dltahfex - band between Phase 2 and 1 from Logistic curve [cent]", style = "centered")
+doc <- body_add_par(doc, value = "Tranthre - Threshold for Transition detection from Logistic curve [no units]", style = "centered")
+doc <- body_add_par(doc, value = "Ph1thre  - Halfextent of the Logistic curve where Phase 1 ends [cent]", style = "centered")
+doc <- body_add_par(doc, value = "Ph2thre  - Halfextent of the Logistic curve where Phase 2 starts [cent]", style = "centered")
+doc <- body_add_par(doc, value = "OnsetT   - Duration of the transition Phase, Vibrato Onset Time [sec]", style = "centered")
+
+
+doc <- body_add_break(doc)                                                        # Go to the next page
+
+
+# Summary of Simple Vibratos
+
+doc <- body_add_par(doc, value = "Simple Vibrato - HalfExtent Results by Sample and by Phase", style = "heading 2")
+
+doc <- body_add_par(doc, value = "Simple Vibrato - HalfExtent Results by Sample, All data", style = "heading 3")
+
+smryAll2t <- dplyr::select(smryAll2, mean, sd, cv, min, p5, p95, max, n_obs)
+smryAll2t <- signif(smryAll2t, digits = 3)
+smryAll2t <- cbind(smryAll2$Sample_ID, smryAll2t)
+colnames(smryAll2t)[1] <- 'Sample_ID'
+
+doc <- body_add_table(doc, smryAll2t, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, value = "Simple Vibrato - summary of HalfExtent [cent] over all samples, All data and by Phase", style = "heading 3")
+
+smrysmryAll2$meanmean <- signif(smrysmryAll2$meanmean, digits = 3)
+smrysmryAll2$meansd <- signif(smrysmryAll2$meansd, digits = 3)
+smrysmryAll2$meancv <- signif(smrysmryAll2$meancv, digits = 3)
+
+doc <- body_add_table(doc, smrysmryAll2, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, value = "Simple Vibrato - Linear Function Parameters", style = "heading 2")
+
+doc <- body_add_par(doc, value = "Simple Vibrato - Linear Function Parameters, List by by Sample", style = "heading 3")
+
+smryLin$Intercept <- signif(smryLin$Intercept, 3)
+smryLin$Slope <- signif(smryLin$Slope, 3)
+
+doc <- body_add_table(doc, smryLin, style = "Normal Table", align_table = "center")
+
+doc <- body_add_par(doc, value = "Simple Vibrato - Averaged Linear Function Parameters over all samples", style = "heading 3")
+
+smrysmryLin$meanInter <- signif(smrysmryLin$meanInter, digits = 3)
+smrysmryLin$meanSlope <- signif(smrysmryLin$meanSlope, digits = 3)
+
+doc <- body_add_table(doc, smrysmryLin, style = "Normal Table", align_table = "center")
+
+# --------------------------------------------------------------------------------------------------------------------------------
+#
+# Write the Word document to a file 
+#
+
+doc <- body_end_section_landscape(doc)
+
+print(doc, target = paste("ID",id,"_","General Analysis Results.docx", sep = ""))
+
+# --------------------------------------------------------------------------------------------------------------------------------
